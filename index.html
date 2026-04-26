@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1929" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="LBI Pirate Tour" />
+  <meta name="description" content="Follow Screecher Jones, the legendary pirate seagull, on an 18-mile GPS tour of Long Beach Island, NJ." />
+  <title>Screecher Jones' Treasure Tour — Long Beach Island, NJ</title>
+  <link rel="manifest" href="manifest.json" />
+  <link href="https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,700&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- SPLASH SCREEN                              -->
+<!-- ══════════════════════════════════════════ -->
+<div id="splash" class="splash">
+  <div class="splash-bg"></div>
+
+  <!-- ─────────────────────────────── -->
+  <!-- PHASE 1: Hero splash             -->
+  <!-- ─────────────────────────────── -->
+  <div class="splash-phase" id="phase-intro">
+
+    <!-- Full-bleed beach video background (muted autoplay loop) -->
+    <div class="intro-video-wrap" id="intro-video-wrap">
+      <video
+        id="intro-bg-video"
+        class="intro-video"
+        autoplay muted loop playsinline preload="auto"
+        src="https://assets.mixkit.co/videos/7487/7487-720.mp4"
+      ></video>
+      <div class="intro-video-overlay"></div>
+    </div>
+
+    <!-- Hero content -->  
+    <div class="intro-content">
+      <p class="intro-location">LONG BEACH ISLAND, NEW JERSEY</p>
+      <h1 class="intro-headline">Follow the Treasure Map<br/>to <em>Long Beach Island</em></h1>
+      <p class="intro-tagline">Screecher Jones leads ye on a free 18-mile GPS pirate tour of LBI's most legendary spots.</p>
+
+      <div class="intro-hero-btns">
+        <button class="intro-start-btn" onclick="openVideoModal()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Start the Tour
+        </button>
+      </div>
+    </div>
+  </div><!-- /phase-intro -->
+
+  <!-- Video modal (Screecher Jones intro) -->
+  <div class="intro-modal hidden" id="intro-modal" role="dialog" aria-modal="true" aria-label="Screecher Jones intro video">
+    <div class="intro-modal-backdrop" onclick="closeVideoModal()"></div>
+    <!-- Tapping backdrop or X closes video and goes to direction picker -->
+    <div class="intro-modal-inner">
+      <div class="intro-modal-header">
+        <div class="intro-modal-avatar">
+          <img src="screecher-closeup.png" alt="Screecher Jones" />
+        </div>
+        <div>
+          <div class="intro-modal-name">Screecher Jones</div>
+          <div class="intro-modal-sub">Yer guide for the plunder</div>
+        </div>
+        <button class="intro-modal-close" onclick="closeVideoModal()" aria-label="Close video">✕</button>
+      </div>
+      <video
+        id="intro-modal-video"
+        class="intro-modal-video"
+        src="screecher-intro.mp4"
+        controls
+        playsinline
+        preload="none"
+      ></video>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────── -->
+  <!-- PHASE 2: Direction picker        -->
+  <!-- ─────────────────────────────── -->
+  <div class="splash-phase hidden" id="phase-direction">
+    <button class="intro-nav-btn intro-back-btn" onclick="goBackToIntro()" aria-label="Back to intro">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <div class="mascot-splash">
+      <img src="screecher-portrait.png" alt="Screecher Jones" class="mascot-img-splash" />
+    </div>
+    <h1 class="splash-title">Screecher Jones'<br/>Treasure Tour</h1>
+    <p class="splash-subtitle">Long Beach Island, New Jersey</p>
+    <p class="splash-tagline">18 miles of buried gold, sunken ships, and secrets — told by the saltiest pirate seagull to ever haunt the Jersey Shore.</p>
+    <div class="direction-picker">
+      <p class="direction-label">Choose yer direction, landlubber:</p>
+      <div class="direction-buttons">
+        <button class="dir-btn" onclick="pickDirection('north')">
+          <span class="dir-arrow">⬆</span>
+          <div>
+            <span class="dir-name">North to South</span>
+            <span class="dir-desc">Barnegat Light → Holgate</span>
+          </div>
+        </button>
+        <button class="dir-btn" onclick="pickDirection('south')">
+          <span class="dir-arrow">⬇</span>
+          <div>
+            <span class="dir-name">South to North</span>
+            <span class="dir-desc">Holgate → Barnegat Light</span>
+          </div>
+        </button>
+      </div>
+    </div>
+    <p class="gps-note">⚓ Keep this app open as ye sail down the island. GPS will trigger stories at each stop.</p>
+  </div><!-- /phase-direction -->
+
+  <!-- ─────────────────────────────── -->
+  <!-- PHASE 3: Payment gate            -->
+  <!-- (shown after direction pick)     -->
+  <!-- ─────────────────────────────── -->
+  <div class="splash-phase hidden" id="phase-payment">
+    <button class="intro-nav-btn intro-back-btn" onclick="goBackToDirection()" aria-label="Back to direction picker">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <div class="mascot-splash">
+      <img src="screecher-portrait.png" alt="Screecher Jones" class="mascot-img-splash" />
+    </div>
+    <h1 class="splash-title">Unlock the Tour</h1>
+    <p class="splash-subtitle">One-time · Yours forever</p>
+
+    <div class="payment-value-wrap">
+      <div class="payment-price-badge">$10</div>
+      <ul class="payment-perks">
+        <li>⚓ 25 GPS-triggered stops</li>
+        <li>🏴‍☠️ Full pirate narration at every site</li>
+        <li>🗺️ Both directions — north &amp; south</li>
+        <li>📍 Works offline once loaded</li>
+        <li>♾️ Replay anytime, no subscription</li>
+      </ul>
+    </div>
+
+    <div class="payment-stripe-wrap">
+      <button class="payment-btn" id="payment-btn" onclick="handlePayment()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+        Pay $10 — Start the Tour
+      </button>
+      <p class="payment-secure-note">🔒 Secure payment via Stripe · No subscription · No app needed</p>
+    </div>
+
+    <div class="payment-gift-wrap">
+      <p class="payment-gift-label">Have a code?</p>
+      <div class="payment-code-row">
+        <input class="payment-code-input" type="text" id="payment-code" placeholder="Enter access code" autocomplete="off" />
+        <button class="payment-code-btn" onclick="redeemCode()">Redeem</button>
+      </div>
+      <div class="payment-code-error hidden" id="payment-code-error">⚠ Invalid code. Try again, scallywag.</div>
+    </div>
+  </div><!-- /phase-payment -->
+
+  <!-- ─────────────────────────────── -->
+  <!-- PHASE 4: Email gate              -->
+  <!-- (shown after stop 1 narration)  -->
+  <!-- ─────────────────────────────── -->
+  <div class="splash-phase hidden" id="phase-gate">
+    <div class="mascot-splash">
+      <img src="screecher-portrait.png" alt="Screecher Jones" class="mascot-img-splash" />
+    </div>
+    <h1 class="splash-title">Sign the Ship's Log</h1>
+    <p class="splash-subtitle">Free access — no payment needed</p>
+    <p class="splash-tagline">Ye've had a taste. Sign the log to keep sailing with Screecher Jones.</p>
+
+    <form class="gate-form" id="gate-form" onsubmit="submitGateForm(event)" novalidate>
+
+      <div class="gate-field">
+        <label class="gate-label" for="gate-email">Email Address</label>
+        <input class="gate-input" type="email" id="gate-email" name="email"
+          placeholder="captain@ship.com" required autocomplete="email" />
+      </div>
+
+      <div class="gate-field">
+        <label class="gate-label">Sailor or local?</label>
+        <div class="crew-toggle-group" role="group">
+          <button type="button" class="crew-toggle-btn active" data-val="visitor" onclick="selectToggle(this,'gate-residency')">Visitor</button>
+          <button type="button" class="crew-toggle-btn"        data-val="local"   onclick="selectToggle(this,'gate-residency')">Local</button>
+        </div>
+        <input type="hidden" id="gate-residency" value="visitor" />
+      </div>
+
+      <div class="gate-field" id="gate-state-field">
+        <label class="gate-label" for="gate-state">Where do ye hail from?</label>
+        <select class="gate-input gate-select" id="gate-state">
+          <option value="" disabled selected>Select yer state…</option>
+          <option>Alabama</option><option>Alaska</option><option>Arizona</option><option>Arkansas</option>
+          <option>California</option><option>Colorado</option><option>Connecticut</option><option>Delaware</option>
+          <option>Florida</option><option>Georgia</option><option>Hawaii</option><option>Idaho</option>
+          <option>Illinois</option><option>Indiana</option><option>Iowa</option><option>Kansas</option>
+          <option>Kentucky</option><option>Louisiana</option><option>Maine</option><option>Maryland</option>
+          <option>Massachusetts</option><option>Michigan</option><option>Minnesota</option><option>Mississippi</option>
+          <option>Missouri</option><option>Montana</option><option>Nebraska</option><option>Nevada</option>
+          <option>New Hampshire</option><option>New Jersey</option><option>New Mexico</option><option>New York</option>
+          <option>North Carolina</option><option>North Dakota</option><option>Ohio</option><option>Oklahoma</option>
+          <option>Oregon</option><option>Pennsylvania</option><option>Rhode Island</option><option>South Carolina</option>
+          <option>South Dakota</option><option>Tennessee</option><option>Texas</option><option>Utah</option>
+          <option>Vermont</option><option>Virginia</option><option>Washington</option><option>West Virginia</option>
+          <option>Wisconsin</option><option>Wyoming</option><option>Outside the US</option>
+        </select>
+      </div>
+
+      <div class="gate-error hidden" id="gate-error">⚠ Enter a valid email to keep sailing, mate.</div>
+
+      <button type="submit" class="action-btn primary full-width gate-submit">
+        Continue the Plunder ▶
+      </button>
+    </form>
+
+    <p class="gate-fine-print">No spam. Screecher Jones will only write when new treasure maps drop.</p>
+  </div><!-- /phase-gate -->
+
+</div><!-- /splash -->
+
+<!-- ══════════════════════════════════════════ -->
+<!-- MAIN APP                                   -->
+<!-- ══════════════════════════════════════════ -->
+<div id="app" class="app hidden">
+
+  <header class="app-header">
+    <div class="header-left">
+      <button class="icon-btn" aria-label="Tour stops" onclick="toggleMenu()">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <div class="header-mascot" aria-hidden="true">
+        <img src="screecher-closeup.png" alt="" class="header-gull-img" />
+      </div>
+      <span class="header-title">Screecher Jones</span>
+    </div>
+    <div class="header-right">
+      <button class="tts-toggle" id="tts-toggle" onclick="toggleTTS()" title="Toggle voice narration" aria-label="Toggle voice narration">
+        <svg id="tts-icon-on" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+          <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+        </svg>
+        <svg id="tts-icon-off" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+          <line x1="23" y1="9" x2="17" y2="15"/>
+          <line x1="17" y1="9" x2="23" y2="15"/>
+        </svg>
+      </button>
+      <div class="gps-indicator" id="gps-dot" title="GPS Status">
+        <span class="dot"></span>
+        <span class="gps-label" id="gps-label">Searching…</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="map-wrapper" id="map-wrapper">
+    <div id="map"></div>
+    <div class="map-deco-overlay" id="map-deco" aria-hidden="true">
+      <svg class="map-compass" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="50" cy="50" r="44" stroke="#c8a84b" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.5"/>
+        <circle cx="50" cy="50" r="36" stroke="#c8a84b" stroke-width="0.75" opacity="0.3"/>
+        <path d="M50 8 L53 20 L50 17 L47 20 Z" fill="#c8a84b" opacity="0.8"/>
+        <path d="M50 92 L53 80 L50 83 L47 80 Z" fill="#c8a84b" opacity="0.5"/>
+        <path d="M8 50 L20 47 L17 50 L20 53 Z" fill="#c8a84b" opacity="0.5"/>
+        <path d="M92 50 L80 47 L83 50 L80 53 Z" fill="#c8a84b" opacity="0.5"/>
+        <text x="50" y="6" text-anchor="middle" fill="#c8a84b" font-size="7" font-family="serif" opacity="0.7">N</text>
+        <circle cx="50" cy="50" r="3" fill="#c8a84b" opacity="0.6"/>
+        <circle cx="50" cy="50" r="1.5" fill="#f0d080" opacity="0.8"/>
+      </svg>
+    </div>
+    <div class="map-overlay-card" id="active-stop-card">
+      <div class="stop-card-inner" id="stop-card-content"></div>
+    </div>
+  </div>
+
+  <div class="stop-panel" id="stop-panel">
+    <div class="panel-drag-handle" onclick="closePanel()"></div>
+    <div class="panel-scroll">
+      <div class="panel-header">
+        <div class="panel-header-top">
+          <div class="stop-number-badge" id="panel-stop-num">STOP 1</div>
+          <div class="panel-tts-controls" id="panel-tts-controls">
+            <button class="tts-skip-btn hidden" id="tts-rewind-btn" onclick="seekNarration(-15)" aria-label="Rewind 15 seconds">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
+            </button>
+            <button class="tts-play-btn" id="tts-play-btn" onclick="playNarration()" aria-label="Play narration">
+              <svg id="tts-play-icon"  width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <svg id="tts-pause-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="hidden"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+              <span id="tts-play-label">Hear the Tale</span>
+            </button>
+            <button class="tts-stop-btn hidden" id="tts-stop-btn" onclick="stopNarration()" aria-label="Stop narration">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+            </button>
+            <button class="tts-skip-btn hidden" id="tts-forward-btn" onclick="seekNarration(15)" aria-label="Forward 15 seconds">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z"/></svg>
+            </button>
+          </div>
+        </div>
+        <h2 class="panel-title" id="panel-title">The Lighthouse</h2>
+        <p class="panel-location" id="panel-location">Barnegat Light, NJ</p>
+      </div>
+      <div class="pirate-speech-bubble">
+        <div class="bubble-avatar">
+          <img src="screecher-talking.png" alt="Screecher Jones" />
+        </div>
+        <div class="bubble-text" id="panel-narration"></div>
+      </div>
+      <div class="stop-facts" id="panel-facts"></div>
+      <div class="stop-actions">
+        <button class="action-btn secondary" id="btn-prev-stop" onclick="navigateStop(-1)">◀ Previous</button>
+        <button class="action-btn primary"   id="btn-next-stop" onclick="navigateStop(1)">Next Stop ▶</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="progress-bar-wrap">
+    <div class="progress-bar-track">
+      <div class="progress-bar-fill" id="progress-fill"></div>
+    </div>
+    <span class="progress-text" id="progress-text">Stop 1 of 25</span>
+  </div>
+
+
+</div><!-- /app -->
+
+<!-- Stops menu + overlay live OUTSIDE .app so overflow:hidden doesn't clip them -->
+<div class="stops-menu" id="stops-menu">
+  <div class="stops-menu-header">
+    <h3>All Stops</h3>
+    <button class="icon-btn" onclick="toggleMenu()" aria-label="Close menu">✕</button>
+  </div>
+  <ul class="stops-list" id="stops-list" role="list"></ul>
+  <div class="menu-footer">
+    <button class="action-btn secondary full-width" onclick="resetTour()">⚓ Change Direction</button>
+  </div>
+</div>
+<div class="overlay" id="menu-overlay" onclick="toggleMenu()"></div>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- TREASURE FOUND ANIMATION OVERLAY          -->
+<!-- ══════════════════════════════════════════ -->
+<div class="treasure-overlay" id="treasure-overlay" aria-hidden="true">
+  <div class="treasure-backdrop"></div>
+  <div class="treasure-content">
+    <div class="treasure-mascot">
+      <img src="screecher-closeup.png" alt="Screecher Jones" class="treasure-gull-img" />
+    </div>
+    <div class="treasure-stop-name" id="treasure-stop-name">Old Barney</div>
+    <div class="treasure-headline">SQUAWK! X Marks the Spot!</div>
+    <div class="treasure-sub">Screecher Jones has a tale for ye</div>
+    <div class="coins-burst" id="coins-burst"></div>
+    <button class="action-btn primary treasure-dismiss" onclick="dismissTreasure()">Hear the Tale ▶</button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast" role="alert" aria-live="polite"></div>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- SELFIE SCREEN (end of tour)               -->
+<!-- ══════════════════════════════════════════ -->
+<div class="selfie-screen hidden" id="selfie-screen" aria-modal="true" role="dialog" aria-label="Victory photo">
+
+  <!-- Step 1: prompt -->
+  <div id="selfie-step-prompt" class="selfie-step">
+    <div class="selfie-bg"></div>
+    <div class="selfie-prompt-content">
+      <div class="selfie-mascot">
+        <img src="screecher-wings.png" alt="Screecher Jones" />
+      </div>
+      <div class="selfie-badge">TOUR COMPLETE</div>
+      <h2 class="selfie-headline">SQUAWK! Ye did it!</h2>
+      <p class="selfie-sub">Ye plundered <strong id="selfie-stop-count">25 stops</strong> on Long Beach Island.<br/>Take a victory selfie to prove it.</p>
+      <div class="selfie-prompt-actions">
+        <button class="action-btn primary selfie-cta" onclick="startSelfieCamera()">
+          📸 Take yer Victory Photo
+        </button>
+        <button class="selfie-skip-btn" onclick="closeSelfieScreen()">Skip — I sail alone</button>
+      </div>
+      <div class="selfie-vote-wrap">
+        <p class="selfie-vote-label">Where should Screecher plunder next?</p>
+        <div class="crew-vote-grid selfie-vote-grid">
+          <button type="button" class="crew-vote-btn" data-val="Cape May, NJ"    onclick="selectSelfieVote(this)">Cape May, NJ</button>
+          <button type="button" class="crew-vote-btn" data-val="Wildwood, NJ"    onclick="selectSelfieVote(this)">Wildwood, NJ</button>
+          <button type="button" class="crew-vote-btn" data-val="Asbury Park, NJ" onclick="selectSelfieVote(this)">Asbury Park, NJ</button>
+          <button type="button" class="crew-vote-btn" data-val="Ocean City, NJ"  onclick="selectSelfieVote(this)">Ocean City, NJ</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: camera + live border overlay -->
+  <div id="selfie-step-camera" class="selfie-step hidden">
+    <div class="selfie-camera-wrap">
+      <video id="selfie-video" autoplay playsinline muted></video>
+      <div class="selfie-border-overlay" id="selfie-border-overlay">
+        <svg id="selfie-border-svg" viewBox="0 0 1080 1350" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+          <!-- TOP BAND -->
+          <rect x="0" y="0" width="1080" height="200" fill="#0b1929"/>
+          <line x1="0" y1="195" x2="1080" y2="195" stroke="#c4862a" stroke-width="3"/>
+          <line x1="0" y1="188" x2="1080" y2="188" stroke="#c4862a" stroke-width="1" opacity="0.4"/>
+          <path d="M0 160 Q54 148 108 160 Q162 172 216 160 Q270 148 324 160 Q378 172 432 160 Q486 148 540 160 Q594 172 648 160 Q702 148 756 160 Q810 172 864 160 Q918 148 972 160 Q1026 172 1080 160" stroke="#c4862a" stroke-width="2.5" fill="none" opacity="0.5"/>
+          <!-- compass TL -->
+          <g transform="translate(54,40)">
+            <circle cx="54" cy="60" r="44" stroke="#c4862a" stroke-width="1.5" fill="none" opacity="0.7"/>
+            <circle cx="54" cy="60" r="30" stroke="#c4862a" stroke-width="0.75" fill="none" opacity="0.4"/>
+            <path d="M54 18 L57 34 L54 30 L51 34 Z" fill="#c4862a" opacity="0.9"/>
+            <path d="M54 102 L57 86 L54 90 L51 86 Z" fill="#c4862a" opacity="0.5"/>
+            <path d="M12 60 L28 57 L24 60 L28 63 Z" fill="#c4862a" opacity="0.5"/>
+            <path d="M96 60 L80 57 L84 60 L80 63 Z" fill="#c4862a" opacity="0.5"/>
+            <text x="54" y="14" text-anchor="middle" fill="#edb95a" font-size="11" font-family="serif" font-weight="bold">N</text>
+            <circle cx="54" cy="60" r="4" fill="#c4862a" opacity="0.8"/>
+            <circle cx="54" cy="60" r="2" fill="#edb95a"/>
+          </g>
+          <!-- compass TR -->
+          <g transform="translate(972,40)">
+            <circle cx="54" cy="60" r="44" stroke="#c4862a" stroke-width="1.5" fill="none" opacity="0.7"/>
+            <circle cx="54" cy="60" r="30" stroke="#c4862a" stroke-width="0.75" fill="none" opacity="0.4"/>
+            <path d="M54 18 L57 34 L54 30 L51 34 Z" fill="#c4862a" opacity="0.9"/>
+            <path d="M54 102 L57 86 L54 90 L51 86 Z" fill="#c4862a" opacity="0.5"/>
+            <path d="M12 60 L28 57 L24 60 L28 63 Z" fill="#c4862a" opacity="0.5"/>
+            <path d="M96 60 L80 57 L84 60 L80 63 Z" fill="#c4862a" opacity="0.5"/>
+            <text x="54" y="14" text-anchor="middle" fill="#edb95a" font-size="11" font-family="serif" font-weight="bold">N</text>
+            <circle cx="54" cy="60" r="4" fill="#c4862a" opacity="0.8"/>
+            <circle cx="54" cy="60" r="2" fill="#edb95a"/>
+          </g>
+          <!-- title -->
+          <text x="540" y="72"  text-anchor="middle" fill="#edb95a"  font-size="48" font-family="Georgia,serif" font-style="italic">Screecher Jones'</text>
+          <text x="540" y="130" text-anchor="middle" fill="#ffffff"   font-size="38" font-family="Georgia,serif" font-style="italic" letter-spacing="2">Treasure Tour</text>
+          <text x="540" y="170" text-anchor="middle" fill="#c4862a"   font-size="20" font-family="Arial,sans-serif" font-weight="700" letter-spacing="5">LONG BEACH ISLAND, NJ</text>
+          <!-- LEFT STRIP -->
+          <rect x="0" y="200" width="44" height="950" fill="#0b1929"/>
+          <line x1="44" y1="200" x2="44" y2="1150" stroke="#c4862a" stroke-width="3"/>
+          <line x1="51" y1="200" x2="51" y2="1150" stroke="#c4862a" stroke-width="1" opacity="0.4"/>
+          <text x="22" y="510" text-anchor="middle" fill="#c4862a" font-size="28" opacity="0.6">⚓</text>
+          <text x="22" y="710" text-anchor="middle" fill="#c4862a" font-size="22" opacity="0.4">🏴‍☠️</text>
+          <text x="22" y="910" text-anchor="middle" fill="#c4862a" font-size="28" opacity="0.6">⚓</text>
+          <!-- RIGHT STRIP -->
+          <rect x="1036" y="200" width="44" height="950" fill="#0b1929"/>
+          <line x1="1036" y1="200" x2="1036" y2="1150" stroke="#c4862a" stroke-width="3"/>
+          <line x1="1029" y1="200" x2="1029" y2="1150" stroke="#c4862a" stroke-width="1" opacity="0.4"/>
+          <text x="1058" y="510" text-anchor="middle" fill="#c4862a" font-size="28" opacity="0.6">⚓</text>
+          <text x="1058" y="710" text-anchor="middle" fill="#c4862a" font-size="22" opacity="0.4">🏴‍☠️</text>
+          <text x="1058" y="910" text-anchor="middle" fill="#c4862a" font-size="28" opacity="0.6">⚓</text>
+          <!-- BOTTOM BAND -->
+          <rect x="0" y="1150" width="1080" height="200" fill="#0b1929"/>
+          <line x1="0" y1="1150" x2="1080" y2="1150" stroke="#c4862a" stroke-width="3"/>
+          <line x1="0" y1="1157" x2="1080" y2="1157" stroke="#c4862a" stroke-width="1" opacity="0.4"/>
+          <path d="M0 1190 Q54 1178 108 1190 Q162 1202 216 1190 Q270 1178 324 1190 Q378 1202 432 1190 Q486 1178 540 1190 Q594 1202 648 1190 Q702 1178 756 1190 Q810 1202 864 1190 Q918 1178 972 1190 Q1026 1202 1080 1190" stroke="#c4862a" stroke-width="2.5" fill="none" opacity="0.5"/>
+          <text id="svg-stop-badge" x="540" y="1218" text-anchor="middle" fill="#edb95a" font-size="30" font-family="Georgia,serif" font-style="italic">I plundered 25 stops on LBI 🏴‍☠️</text>
+          <text x="540" y="1258" text-anchor="middle" fill="#c4862a" font-size="22" font-family="Arial,sans-serif" font-weight="700" letter-spacing="4">ScreecherJones.com</text>
+          <!-- bottom corners -->
+          <circle cx="54"  cy="1200" r="30" stroke="#c4862a" stroke-width="1.5" fill="none" opacity="0.5"/>
+          <text x="54"  y="1208" text-anchor="middle" fill="#c4862a" font-size="26" opacity="0.7">⚓</text>
+          <circle cx="1026" cy="1200" r="30" stroke="#c4862a" stroke-width="1.5" fill="none" opacity="0.5"/>
+          <text x="1026" y="1208" text-anchor="middle" fill="#c4862a" font-size="26" opacity="0.7">⚓</text>
+        </svg>
+      </div>
+      <button class="selfie-shutter" id="selfie-shutter" onclick="capturePhoto()" aria-label="Take photo">
+        <div class="selfie-shutter-ring"></div>
+        <div class="selfie-shutter-dot"></div>
+      </button>
+      <button class="selfie-flip-btn" onclick="flipCamera()" aria-label="Flip camera">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+      </button>
+      <button class="selfie-cancel-btn" onclick="cancelCamera()" aria-label="Cancel">✕</button>
+    </div>
+    <canvas id="selfie-canvas" style="display:none;"></canvas>
+  </div>
+
+  <!-- Step 3: preview + share -->
+  <div id="selfie-step-share" class="selfie-step hidden">
+    <div class="selfie-share-wrap">
+      <div class="selfie-preview-label">
+        <div class="selfie-badge">YER TROPHY</div>
+      </div>
+      <div class="selfie-preview-img-wrap">
+        <img id="selfie-preview-img" alt="Your victory photo" class="selfie-preview-img" />
+      </div>
+      <div class="selfie-share-actions">
+        <button class="action-btn primary selfie-share-btn" onclick="sharePhoto()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          Share yer Victory
+        </button>
+        <button class="action-btn secondary" onclick="retakePhoto()">Retake</button>
+      </div>
+      <button class="selfie-skip-btn" onclick="closeSelfieScreen()">Done — close</button>
+    </div>
+  </div>
+
+</div><!-- /selfie-screen -->
+
+<script src="tour-data.js?v=25"></script>
+<script src="tour-data-asburypark.js?v=25"></script>
+<script src="tour-data-wildwood.js?v=25"></script>
+<script src="tour-data-hopatcong.js?v=25"></script>
+<script src="selfie.js?v=25"></script>
+<script src="app.js?v=25"></script>
+<script>document.addEventListener('DOMContentLoaded', initSplash);</script>
+</body>
+</html>
