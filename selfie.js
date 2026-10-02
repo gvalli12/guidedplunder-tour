@@ -145,8 +145,15 @@ let capturedDataURL = null;
 window.showSelfieScreen = function (stopsVisited) {
   const countEl  = document.getElementById('selfie-stop-count');
   const svgBadge = document.getElementById('svg-stop-badge');
+  const place = (typeof DEST !== 'undefined' && DEST && DEST.selfieLocation) ? DEST.selfieLocation : 'LBI';
   if (countEl)  countEl.textContent  = stopsVisited + ' stops';
-  if (svgBadge) svgBadge.textContent = `I plundered ${stopsVisited} stops on LBI 🏴‍☠️`;
+  if (svgBadge) {
+    if (typeof DEST !== 'undefined' && DEST && DEST.svgBadge) {
+      svgBadge.textContent = DEST.svgBadge.replace(/\d+/, String(stopsVisited));
+    } else {
+      svgBadge.textContent = 'I plundered ' + stopsVisited + ' stops on ' + place + ' 🏴‍☠️';
+    }
+  }
   _showSelfieStep('selfie-step-prompt');
   document.getElementById('selfie-screen').classList.remove('hidden');
 };
@@ -175,6 +182,11 @@ window.cancelCamera = function () {
 };
 
 function _startStream () {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    alert('SQUAWK! Camera is not available in this browser.');
+    _showSelfieStep('selfie-step-prompt');
+    return;
+  }
   navigator.mediaDevices.getUserMedia({
     video: { facingMode, width: { ideal: 1080 }, height: { ideal: 1350 } },
     audio: false
@@ -239,13 +251,14 @@ function _showPreview (dataURL) {
 window.sharePhoto = async function () {
   if (!capturedDataURL) return;
   const blob = await (await fetch(capturedDataURL)).blob();
-  const file = new File([blob], 'screecher-jones-lbi.jpg', { type: 'image/jpeg' });
+  const place = (typeof DEST !== 'undefined' && DEST && DEST.shortTitle) ? DEST.shortTitle : 'the Jersey Shore';
+  const file = new File([blob], 'screecher-jones-tour.jpg', { type: 'image/jpeg' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({
         files: [file],
-        title: "Screecher Jones' LBI Treasure Tour",
-        text:  "I just plundered Long Beach Island with Screecher Jones 🏴‍☠️ Free GPS pirate tour — follow the treasure map!"
+        title: "Screecher Jones' Treasure Tour",
+        text:  "I just plundered " + place + " with Screecher Jones 🏴‍☠️ GPS pirate tour — follow the treasure map!"
       });
     } catch (err) {
       if (err.name !== 'AbortError') _fallbackDownload(capturedDataURL);
@@ -257,7 +270,7 @@ window.sharePhoto = async function () {
 
 function _fallbackDownload (dataURL) {
   const a = document.createElement('a');
-  a.href = dataURL; a.download = 'screecher-jones-lbi.jpg'; a.click();
+  a.href = dataURL; a.download = 'screecher-jones-tour.jpg'; a.click();
 }
 
 window.retakePhoto = function () {
@@ -292,9 +305,9 @@ window.closeVideoModal = function () {
   video.pause();
   video.currentTime = 0;
   modal.classList.add('hidden');
-  // Advance to direction picker, then play Screecher's intro narration
+  // Play intro in this tap. A delayed play() loses the user-gesture token and is blocked.
   showDirectionPicker();
-  setTimeout(() => { if (typeof playIntro === 'function') playIntro(); }, 300);
+  if (typeof playIntro === 'function') playIntro();
 };
 
 // ─── PAYMENT GATE ────────────────────────────────────────────
@@ -392,9 +405,12 @@ window.handlePayment = function() {
     if (params.get('paid') === '1') {
       _gpStore.set('gp_paid', '1');
       window._hasPaid = true;
-      // Clean URL without reload
+      // Drop only the payment flag. Replacing the whole query used to
+      // erase ?dest= and start the LBI tour after an Asbury/Wildwood checkout.
+      params.delete('paid');
       if (window.history && window.history.replaceState) {
-        window.history.replaceState({}, '', window.location.pathname);
+        var qs = params.toString();
+        window.history.replaceState({}, '', window.location.pathname + (qs ? '?' + qs : '') + window.location.hash);
       }
     }
   } catch(_) {}

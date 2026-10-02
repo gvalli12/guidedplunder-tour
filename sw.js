@@ -1,18 +1,23 @@
-// Service Worker — LBI Pirate Tour PWA
-const CACHE_NAME = 'lbi-pirate-v25';
+// Service Worker — GuidedPlunder GPS tour PWA
+const CACHE_NAME = 'guidedplunder-tour-v26';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './app.js',
+  './selfie.js',
   './tour-data.js',
+  './tour-data-asburypark.js',
+  './tour-data-wildwood.js',
+  './tour-data-hopatcong.js',
   './deals-data.js',
   './manifest.json',
+  './icon-192.png',
+  './icon-512.png',
   './screecher-wings.png',
   './screecher-talking.png',
   './screecher-portrait.png',
   './screecher-closeup.png',
-  './selfie.js',
   './screecher-intro.mp4',
   './audio/intro.mp3',
   './audio/pirate-music.mp3',
@@ -40,15 +45,20 @@ const ASSETS = [
   './audio/stops/stop-22.mp3',
   './audio/stops/stop-23.mp3',
   './audio/stops/stop-24.mp3',
-  './audio/stops/stop-25.mp3'
+  './audio/stops/stop-25.mp3',
+  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
+  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(ASSETS))
-      .then(() => self.skipWaiting())
-  );
+  // Cache each file on its own. addAll() rejects the entire install if one
+  // asset 404s or the quota blows up on the intro video, which left the
+  // tour with no offline shell at all.
+  e.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    await Promise.all(ASSETS.map(url => cache.add(url).catch(() => {})));
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', e => {
@@ -59,16 +69,35 @@ self.addEventListener('activate', e => {
   );
 });
 
+function shouldRuntimeCache(request, response) {
+  if (!response || response.status !== 200) return false;
+  const url = new URL(request.url);
+  if (url.origin === self.location.origin && response.type === 'basic') return true;
+  // Leaflet is required to open the map. Do not cache map tiles — they are unbounded.
+  if (url.hostname === 'unpkg.com' && response.type === 'cors') return true;
+  return false;
+}
+
 self.addEventListener('fetch', e => {
-  e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-      return fetch(e.request).then(resp => {
-        if (!resp || resp.status !== 200 || resp.type !== 'basic') return resp;
-        const clone = resp.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
-        return resp;
-      }).catch(() => cached);
-    })
-  );
+  const request = e.request;
+  if (request.method !== 'GET') return;
+  // Media elements seek with Range. A cached 200 for a Range request breaks playback.
+  if (request.headers.has('range')) return;
+
+  e.respondWith((async () => {
+    // ignoreSearch so app.js?v=26 hits the precached app.js, and
+    // index.html?dest=asbury still opens offline.
+    const cached = await caches.match(request, { ignoreSearch: true });
+    if (cached) return cached;
+    try {
+      const response = await fetch(request);
+      if (shouldRuntimeCache(request, response)) {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(request, copy)).catch(() => {});
+      }
+      return response;
+    } catch (_) {
+      return cached || Response.error();
+    }
+  })());
 });
