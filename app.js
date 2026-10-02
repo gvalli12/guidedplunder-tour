@@ -89,6 +89,12 @@ let visitedStops = new Set();
 let panelOpen = false;
 let userLat = null;
 let userLng = null;
+// One GPS arrival at a time. Overlapping stop radii used to mark every
+// in-range stop visited in a single fix and skip their narration.
+let arrivalLocked = false;
+let arrivalCooldownUntil = 0;
+let narrationPending = false;
+let speechUtterance = null;
 
 // Audio state
 let ttsEnabled = true;
@@ -279,18 +285,6 @@ function showDirectionPicker() {
     });
     setTimeout(() => { dirPhase.style.transition = ''; dirPhase.style.opacity = ''; }, 520);
   }, 520);
-
-  // Fade in background music after intro
-  if (bgMusic) {
-    bgMusic.volume = 0;
-    bgMusic.play().catch(() => {});
-    let v = 0;
-    const fade = setInterval(() => {
-      v = Math.min(MUSIC_FULL_VOL, v + 0.005);
-      bgMusic.volume = v;
-      if (v >= MUSIC_FULL_VOL) clearInterval(fade);
-    }, 80);
-  }
 }
 
 // Unlock audio context with a silent play on the direction-pick tap
@@ -335,8 +329,18 @@ function startTour(dir) {
 
 function resetTour() {
   stopNarration();
-  if (watchId) navigator.geolocation.clearWatch(watchId);
-  map = null;
+  if (watchId !== null && navigator.geolocation) navigator.geolocation.clearWatch(watchId);
+  if (window._accuracyCircle) {
+    try { window._accuracyCircle.remove(); } catch (_) {}
+    window._accuracyCircle = null;
+  }
+  // map.remove() clears the container's Leaflet id. Wiping innerHTML
+  // without that leaves _leaflet_id set and the next L.map() throws
+  // "Map container is already initialized."
+  if (map) {
+    map.remove();
+    map = null;
+  }
   userMarker = null;
   watchId = null;
   currentStopIndex = 0;
@@ -347,14 +351,18 @@ function resetTour() {
   panelOpen = false;
   userLat = null;
   userLng = null;
+  arrivalLocked = false;
+  arrivalCooldownUntil = 0;
   document.getElementById('app').classList.add('hidden');
   document.getElementById('splash').classList.remove('hidden');
-  document.getElementById('map').innerHTML = '';
+  const mapEl = document.getElementById('map');
+  if (mapEl) mapEl.innerHTML = '';
   toggleMenu(true);
   // Go straight to direction picker and replay intro voice
   introPlayed = false;
   showDirectionPicker();
-  setTimeout(() => { if (typeof playIntro === 'function') playIntro(); }, 300);
+  // Same turn as the tap so autoplay is still allowed.
+  if (typeof playIntro === 'function') playIntro();
 }
 
 // ──────────────────────────────────────────────
@@ -363,9 +371,14 @@ function resetTour() {
 
 function initMap() {
   if (map) return;
+  if (typeof L === 'undefined') {
+    showToast('Map failed to load. Check your connection and reload.');
+    return;
+  }
 
-  const center = [39.632, -74.175];
-  map = L.map('map', { center: center, zoom: 12, zoomControl: true });
+  const first = stops[0];
+  const center = first ? [first.lat, first.lng] : [39.632, -74.175];
+  map = L.map('map', { center: center, zoom: first ? 14 : 12, zoomControl: true });
   // Move zoom control to bottom-right (away from header)
   map.zoomControl.setPosition('bottomright');
 
@@ -434,6 +447,7 @@ function startGPS() {
     showToast("⚠️ GPS not available on this device");
     return;
   }
+  if (watchId !== null) navigator.geolocation.clearWatch(watchId);
   setGPSStatus('searching');
   watchId = navigator.geolocation.watchPosition(
     onGPSSuccess, onGPSError,
@@ -479,12 +493,14 @@ function onGPSSuccess(pos) {
   } else {
     userMarker.setLatLng([userLat, userLng]);
   }
-  checkProximity(userLat, userLng);
+  checkProximity(userLat, userLng, pos.coords.accuracy);
 }
 
 function onGPSError(err) {
+  // A timeout after a good fix is not "GPS off" — the watch is still active.
+  if (err && err.code === 3 && userLat != null) return;
   setGPSStatus('error');
-  if (err.code === 1) {
+  if (err && err.code === 1) {
     showToast("⚠️ Location access denied. Enable GPS for auto-triggers.");
   }
 }
@@ -497,14 +513,35 @@ function setGPSStatus(status) {
   if (label) label.textContent = labels[status] || '';
 }
 
-function checkProximity(lat, lng) {
-  stops.forEach((stop, i) => {
-    const dist = getDistanceMeters(lat, lng, stop.lat, stop.lng);
-    if (dist < stop.radius && !visitedStops.has(i)) {
-      visitedStops.add(i);
-      triggerStopArrival(i);
+function isEmailGateOpen() {
+  const splash = document.getElementById('splash');
+  const gate = document.getElementById('phase-gate');
+  if (!splash || !gate) return false;
+  return !splash.classList.contains('hidden') && !gate.classList.contains('hidden');
+}
+
+function checkProximity(lat, lng, accuracy) {
+  if (arrivalLocked) return;
+  if (Date.now() < arrivalCooldownUntil) return;
+  // Don't consume stops while the email gate is covering the tour.
+  if (isEmailGateOpen()) return;
+  // A coarse first fix (often 1km+) would false-trigger and permanently skip stops.
+  if (typeof accuracy === 'number' && isFinite(accuracy) && accuracy > 200) return;
+
+  let best = -1;
+  let bestDist = Infinity;
+  for (let i = 0; i < stops.length; i++) {
+    if (visitedStops.has(i)) continue;
+    const dist = getDistanceMeters(lat, lng, stops[i].lat, stops[i].lng);
+    if (dist < stops[i].radius && dist < bestDist) {
+      best = i;
+      bestDist = dist;
     }
-  });
+  }
+  if (best < 0) return;
+  visitedStops.add(best);
+  arrivalLocked = true;
+  triggerStopArrival(best);
 }
 
 function getDistanceMeters(lat1, lng1, lat2, lng2) {
@@ -521,9 +558,9 @@ function triggerStopArrival(stopIndex) {
   showStop(stopIndex);
   showTreasureAnimation(stop.short);
   if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-  // Auto-play the stop narration — user is physically there
-  // Small delay so the panel animation settles first
-  setTimeout(() => playNarration(), 800);
+  // Auto-play once. dismissTreasure used to call playNarration again,
+  // and that second call treated "already speaking" as a stop.
+  if (ttsEnabled) setTimeout(() => ensureNarration(), 800);
 }
 
 // ──────────────────────────────────────────────
@@ -561,9 +598,12 @@ function dismissTreasure() {
   const overlay = document.getElementById('treasure-overlay');
   overlay.classList.remove('visible');
   openPanel();
-  if (ttsEnabled) {
-    setTimeout(() => playNarration(), 400);
-  }
+  // Allow the next overlapping stop only after this one is dismissed,
+  // with a short gap so the next GPS tick doesn't immediately cover the tale.
+  arrivalLocked = false;
+  arrivalCooldownUntil = Date.now() + 2500;
+  // Same turn as the tap so speech (and mp3 play) still has a user gesture.
+  if (ttsEnabled) ensureNarration();
 }
 
 // ──────────────────────────────────────────────
@@ -576,17 +616,30 @@ function initTTS() {
 }
 
 // ── Background music ──────────────────────────
-function startBgMusic() {
-  if (bgMusic) return; // already created
+function ensureBgMusic() {
+  if (bgMusic) return bgMusic;
   bgMusic = new Audio(MUSIC_SRC);
   bgMusic.loop = true;
   bgMusic.volume = MUSIC_FULL_VOL;
-  bgMusic.play().catch(() => {
-    // Autoplay blocked — will start on first user interaction
-    document.addEventListener('click', () => {
-      bgMusic.play().catch(() => {});
-    }, { once: true });
-  });
+  return bgMusic;
+}
+
+function resumeBgMusic() {
+  if (!ttsEnabled) return;
+  const music = ensureBgMusic();
+  music.volume = MUSIC_FULL_VOL;
+  const pending = music.play();
+  if (pending && pending.catch) {
+    pending.catch(() => {
+      document.addEventListener('pointerdown', () => {
+        if (ttsEnabled && bgMusic) bgMusic.play().catch(() => {});
+      }, { once: true });
+    });
+  }
+}
+
+function startBgMusic() {
+  resumeBgMusic();
 }
 
 function stopBgMusic() {
@@ -615,77 +668,197 @@ function duckMusic(duck) {
 
 // ── Intro narration ────────────────────────────
 function playIntro() {
-  if (!ttsEnabled) return;
+  if (!ttsEnabled) {
+    introPlayed = true;
+    return;
+  }
   introPlayed = true;
-  // Stop any running stop narration first
   stopStopNarration();
-  // Pause music completely for intro, don't just duck
-  if (bgMusic) { bgMusic.pause(); }
-  introAudio = new Audio(INTRO_SRC);
-  introAudio.volume = 1;
-  introAudio.oncanplaythrough = () => {
-    ttsSpeaking = true;
-    updatePlayButton(true);
-    introAudio.play().catch(() => {
-      ttsSpeaking = false;
-      updatePlayButton(false);
-      if (bgMusic) bgMusic.play().catch(() => {});
-    });
-  };
-  introAudio.onended = () => {
+  // intro.mp3 is the LBI script (25 stops, Barnegat Light → Holgate).
+  // Playing it on another destination tells the sailor the wrong tour.
+  if (DEST.id !== 'lbi') {
+    resumeBgMusic();
+    return;
+  }
+  if (bgMusic) bgMusic.pause();
+  const audio = new Audio(INTRO_SRC);
+  introAudio = audio;
+  audio.volume = 1;
+  const finish = () => {
+    if (introAudio !== audio) return;
     ttsSpeaking = false;
     updatePlayButton(false);
     _setTalkingPose(false);
     _setIntroPauseUI(true);
     introAudio = null;
-    // Already on direction picker — no need to call showDirectionPicker() again
+    resumeBgMusic();
   };
-  introAudio.onerror = () => {
+  audio.onended = finish;
+  audio.onerror = () => {
+    if (introAudio !== audio) return;
     ttsSpeaking = false;
     updatePlayButton(false);
     _setTalkingPose(false);
     introAudio = null;
+    resumeBgMusic();
   };
-  introAudio.load();
+  // play() must run inside the tap that opened this, not after canplaythrough.
+  ttsSpeaking = true;
+  _setTalkingPose(true);
+  audio.play().catch(() => {
+    if (introAudio !== audio) return;
+    ttsSpeaking = false;
+    _setTalkingPose(false);
+    resumeBgMusic();
+  });
 }
 
 function stopIntroNarration() {
   if (introAudio) {
-    introAudio.pause();
-    introAudio.src = '';
+    const audio = introAudio;
     introAudio = null;
+    audio.onended = null;
+    audio.onerror = null;
+    audio.pause();
     ttsSpeaking = false;
     updatePlayButton(false);
-    // Resume music after intro is stopped
-    if (bgMusic && ttsEnabled) bgMusic.play().catch(() => {});
+    if (ttsEnabled) resumeBgMusic();
   }
+}
+
+// Recorded stop mp3s exist only for the LBI tour (stop-01 … stop-25).
+// Other destinations number their own stories from 1, so those files are the wrong tale.
+function recordedStopSrc(stop) {
+  if (!stop || DEST.id !== 'lbi') return null;
+  const audioId = Number(stop.originalId || stop.id);
+  if (!Number.isInteger(audioId) || audioId < 1 || audioId > 25) return null;
+  return `${AUDIO_BASE}stop-${String(audioId).padStart(2, '0')}.mp3${AUDIO_VER}`;
+}
+
+function maybeShowEmailGate() {
+  if (currentStopIndex === 0 && !window._gateShown) {
+    window._gateShown = true;
+    setTimeout(() => { if (typeof showEmailGate === 'function') showEmailGate(); }, 800);
+  }
+}
+
+function stopSpeech() {
+  speechToken++;
+  const had = speechUtterance;
+  speechUtterance = null;
+  narrationPending = false;
+  // cancel() is only needed when an utterance is queued. Calling it before
+  // every speak() makes Chrome drop the next utterance.
+  if (!had) return;
+  try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (_) {}
+}
+
+let speechToken = 0;
+
+function whenVoicesReady(cb) {
+  const synth = window.speechSynthesis;
+  if (!synth) { cb(false); return; }
+  if (synth.getVoices().length) { cb(true); return; }
+  let done = false;
+  const finish = (ok) => {
+    if (done) return;
+    done = true;
+    synth.removeEventListener('voiceschanged', onChange);
+    cb(ok);
+  };
+  const onChange = () => finish(synth.getVoices().length > 0);
+  synth.addEventListener('voiceschanged', onChange);
+  // Chrome leaves getVoices() empty until this call, then fires voiceschanged.
+  synth.getVoices();
+  setTimeout(() => finish(synth.getVoices().length > 0), 800);
+}
+
+function speakNarration(text) {
+  if (!window.speechSynthesis || !text) {
+    showToast('🔇 No recorded audio for this stop yet');
+    narrationPending = false;
+    return;
+  }
+  const token = ++speechToken;
+  narrationPending = true;
+  whenVoicesReady((ok) => {
+    if (token !== speechToken) return;
+    if (!ok) {
+      narrationPending = false;
+      ttsSpeaking = false;
+      updatePlayButton(false);
+      showToast('🔇 Narration could not play on this device');
+      return;
+    }
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 1;
+    speechUtterance = u;
+    ttsSpeaking = true;
+    updatePlayButton(true);
+    duckMusic(true);
+    u.onend = () => {
+      if (speechUtterance !== u) return;
+      speechUtterance = null;
+      ttsSpeaking = false;
+      narrationPending = false;
+      updatePlayButton(false);
+      duckMusic(false);
+      maybeShowEmailGate();
+    };
+    u.onerror = (ev) => {
+      if (speechUtterance !== u) return;
+      const reason = ev && ev.error;
+      speechUtterance = null;
+      ttsSpeaking = false;
+      narrationPending = false;
+      updatePlayButton(false);
+      duckMusic(false);
+      if (reason !== 'canceled' && reason !== 'interrupted') {
+        showToast('🔇 Narration could not play on this device');
+      }
+    };
+    const start = () => {
+      if (speechUtterance !== u) return;
+      window.speechSynthesis.speak(u);
+    };
+    if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+      window.speechSynthesis.cancel();
+      setTimeout(start, 60);
+    } else {
+      start();
+    }
+  });
+}
+
+// Start narration only if nothing is already playing. Used by GPS arrival
+// and the treasure button so they cannot cancel each other.
+function ensureNarration() {
+  if (!ttsEnabled || narrationPending) return;
+  if (speechUtterance) return;
+  // Leave a tale the sailor paused; only start when nothing is loaded.
+  if (narrationAudio && !narrationAudio.ended) return;
+  // Arrival should tell this stop's tale, not keep playing the LBI intro.
+  if (introAudio) stopIntroNarration();
+  playNarration();
 }
 
 // ── Per-stop narration ─────────────────────────
 function playNarration() {
-  if (ttsSpeaking) {
+  if (speechUtterance || narrationPending) {
     stopNarration();
     return;
   }
-  const stop = stops[currentStopIndex];
-  if (!stop) return;
-
-  // Stop intro if it's still playing
-  stopIntroNarration();
-  stopStopNarration();
-
-  // Use originalId so audio always maps to the correct file regardless of direction
-  const audioId = stop.originalId || stop.id;
-  const padded = String(audioId).padStart(2, '0');
-  const src = `${AUDIO_BASE}stop-${padded}.mp3${AUDIO_VER}`;
-
-  narrationAudio = new Audio(src);
-  narrationAudio.volume = 1;
-  duckMusic(true);
-
-  // Always attempt immediate play — audio context is unlocked from the startTour gesture
-  // oncanplaythrough fires too late (gesture context expired), so we play() right away
-  const _playAttempt = () => {
+  // The button is labeled Pause while a tale is playing — pause in place.
+  if (narrationAudio && !narrationAudio.paused && !narrationAudio.ended) {
+    narrationAudio.pause();
+    ttsSpeaking = false;
+    narrationPending = false;
+    updatePlayButton(false);
+    duckMusic(false);
+    return;
+  }
+  if (narrationAudio && narrationAudio.paused && !narrationAudio.ended && narrationAudio.currentTime > 0) {
+    duckMusic(true);
     ttsSpeaking = true;
     updatePlayButton(true);
     narrationAudio.play().catch(() => {
@@ -693,47 +866,81 @@ function playNarration() {
       updatePlayButton(false);
       duckMusic(false);
     });
-  };
+    return;
+  }
+  startStopNarration();
+}
 
-  if (narrationAudio.readyState >= 2) {
-    _playAttempt();
-  } else {
-    narrationAudio.addEventListener('canplay', _playAttempt, { once: true });
+function startStopNarration() {
+  const stop = stops[currentStopIndex];
+  if (!stop) return;
+
+  stopIntroNarration();
+  stopStopNarration();
+  narrationPending = true;
+
+  const src = recordedStopSrc(stop);
+  if (!src) {
+    speakNarration((stop.narration || '').replace(/\*/g, ''));
+    return;
   }
 
-  // Also load immediately to trigger buffering
-  narrationAudio.load();
-  narrationAudio.onended = () => {
+  const audio = new Audio();
+  narrationAudio = audio;
+  audio.preload = 'auto';
+  audio.volume = 1;
+  duckMusic(true);
+
+  audio.onended = () => {
+    if (narrationAudio !== audio) return;
     ttsSpeaking = false;
+    narrationPending = false;
     updatePlayButton(false);
     duckMusic(false);
     narrationAudio = null;
-    // After stop 1 narration — show email gate (once only)
-    if (currentStopIndex === 0 && !window._gateShown) {
-      window._gateShown = true;
-      setTimeout(() => showEmailGate(), 800);
-    }
+    maybeShowEmailGate();
   };
-  narrationAudio.onerror = () => {
+  audio.onerror = () => {
+    if (narrationAudio !== audio) return;
     ttsSpeaking = false;
+    narrationPending = false;
     updatePlayButton(false);
     duckMusic(false);
     narrationAudio = null;
     showToast('🔇 Audio not found for this stop');
   };
 
-  // Start loading
-  narrationAudio.load();
+  const start = () => {
+    if (narrationAudio !== audio) return;
+    ttsSpeaking = true;
+    narrationPending = false;
+    updatePlayButton(true);
+    audio.play().catch(() => {
+      if (narrationAudio !== audio) return;
+      ttsSpeaking = false;
+      updatePlayButton(false);
+      duckMusic(false);
+    });
+  };
+
+  // Bind canplay before src so a cached file cannot finish loading first.
+  // Do not call load() again — a second load() aborts the play that just started.
+  audio.addEventListener('canplay', start, { once: true });
+  audio.src = src;
 }
 
 // Stop only the per-stop narration (used internally)
 function stopStopNarration() {
+  stopSpeech();
   if (narrationAudio) {
-    narrationAudio.pause();
-    narrationAudio.src = '';
+    const audio = narrationAudio;
     narrationAudio = null;
+    audio.onended = null;
+    audio.onerror = null;
+    audio.pause();
   }
   ttsSpeaking = false;
+  narrationPending = false;
   updatePlayButton(false);
 }
 
@@ -818,16 +1025,17 @@ function showStop(index) {
   document.getElementById('panel-location').textContent = stop.location;
 
   const narrationEl = document.getElementById('panel-narration');
-  const paragraphs = stop.narration.split('\n\n').map(p =>
+  const paragraphs = (stop.narration || '').split('\n\n').map(p =>
     `<p>${p.replace(/\*(.*?)\*/g, '<em>$1</em>')}</p>`
   ).join('');
   narrationEl.innerHTML = paragraphs;
 
   const factsEl = document.getElementById('panel-facts');
+  const facts = Array.isArray(stop.facts) ? stop.facts : [];
   factsEl.innerHTML = `
     <div class="facts-header">⚓ The Booty of Knowledge</div>
     <ul class="facts-list">
-      ${stop.facts.map(f => `<li>${f}</li>`).join('')}
+      ${facts.map(f => `<li>${f}</li>`).join('')}
     </ul>
   `;
 
@@ -840,7 +1048,9 @@ function showStop(index) {
 
   document.getElementById('btn-prev-stop').disabled = index === 0;
   const nextBtn = document.getElementById('btn-next-stop');
-  nextBtn.disabled = index === stops.length - 1;
+  // Keep the last-stop button enabled — it opens the victory selfie.
+  // Disabling it made "Journey Complete!" unreachable.
+  nextBtn.disabled = false;
   nextBtn.textContent = index === stops.length - 1 ? '🗺️ Journey Complete!' : 'Next Stop ▶';
 
   panMapToStop(index);
@@ -853,11 +1063,12 @@ function showStop(index) {
 
 function navigateStop(delta) {
   const target = currentStopIndex + delta;
-  // Last stop — trigger crew sign-up instead of advancing past end
   if (target >= stops.length) {
-    showCrewOverlay();
+    const seen = visitedStops.size || stops.length;
+    if (typeof showSelfieScreen === 'function') showSelfieScreen(seen);
     return;
   }
+  if (target < 0) return;
   showStop(target);
 }
 
@@ -1001,20 +1212,17 @@ function skipCrewForm() {
 }
 
 function selectToggle(btn, fieldId) {
-  // Update active state
-  btn.closest('.crew-toggle-group').querySelectorAll('.crew-toggle-btn').forEach(b => b.classList.remove('active'));
+  const group = btn.closest('.crew-toggle-group');
+  if (group) group.querySelectorAll('.crew-toggle-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  // Store value
-  document.getElementById('crew-' + fieldId).value = btn.dataset.val;
-  // Show/hide state dropdown
-  const stateField = document.getElementById('crew-state-field');
-  if (fieldId === 'residency') {
-    if (btn.dataset.val === 'local') {
-      stateField.style.display = 'none';
-    } else {
-      stateField.style.display = '';
-    }
-  }
+  // Gate markup uses id "gate-residency"; the unused crew form used "crew-residency".
+  // Looking up only the crew-prefixed id threw and left Local sailors stuck as visitors.
+  const hidden = document.getElementById(fieldId) || document.getElementById('crew-' + fieldId);
+  if (hidden) hidden.value = btn.dataset.val;
+  const isResidency = fieldId === 'residency' || fieldId === 'gate-residency';
+  if (!isResidency) return;
+  const stateField = document.getElementById(fieldId === 'gate-residency' ? 'gate-state-field' : 'crew-state-field');
+  if (stateField) stateField.style.display = btn.dataset.val === 'local' ? 'none' : '';
 }
 
 function selectVote(btn) {
@@ -1067,7 +1275,7 @@ function submitCrewForm(e) {
     residency,
     state: residency === 'visitor' ? state : 'N/A (local)',
     next_town: nextTown,
-    tour_direction: currentDirection || 'unknown',
+    tour_direction: direction || 'unknown',
     stops_visited: visitedStops ? visitedStops.size : 0,
     submitted_at: new Date().toISOString()
   };
