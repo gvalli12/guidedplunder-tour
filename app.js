@@ -3,7 +3,7 @@
 // ──────────────────────────────────────────────
 // DESTINATION CONFIG
 // Reads ?dest= URL param. Defaults to 'lbi'.
-// Supported: lbi | asbury | wildwood
+// Supported: lbi | asbury | wildwood | hopatcong | hohokus
 // ──────────────────────────────────────────────
 const _destParam = (function() {
   try { return new URLSearchParams(window.location.search).get('dest') || 'lbi'; } catch(_) { return 'lbi'; }
@@ -73,6 +73,24 @@ const DESTINATION_CONFIG = {
     svgLocation: 'LAKE HOPATCONG, NJ',
     totalStops: 20,
     getStopsFn: function(dir) { return typeof getHopatcongStops === 'function' ? getHopatcongStops(dir) : []; }
+  },
+  hohokus: {
+    id: 'hohokus',
+    title: 'Ho-Ho-Kus, New Jersey',
+    shortTitle: 'Ho-Ho-Kus',
+    locationLabel: 'HO-HO-KUS, NEW JERSEY',
+    heroHeadline: 'Follow the Treasure Map<br/>to <em>Ho-Ho-Kus</em>',
+    heroTagline: 'Screecher Jones leads ye on a GPS walking and driving loop of Ho-Ho-Kus — a Gothic landmark, a mill brook, and a dirt oval the borough paved over.',
+    splashTagline: 'Hyphens, a Revolutionary wedding, and a racetrack that is now a neighborhood — told by the saltiest pirate seagull in Bergen County.',
+    dirNorthDesc: 'Borough Hall → the old track → The Hermitage',
+    dirSouthDesc: 'The Hermitage → the old track → Borough Hall',
+    selfieLocation: 'Ho-Ho-Kus',
+    svgBadge: 'I plundered 10 stops in Ho-Ho-Kus 🏴\u200D☠️',
+    svgLocation: 'HO-HO-KUS, NJ',
+    totalStops: 10,
+    mapCenter: [41.0012, -74.1115],
+    mapZoom: 14,
+    getStopsFn: function(dir) { return typeof getHohokusStops === 'function' ? getHohokusStops(dir) : []; }
   }
 };
 
@@ -160,6 +178,20 @@ function _applyDestination() {
   if (svgBadge) svgBadge.textContent = d.svgBadge;
   var svgLoc = document.querySelector('#selfie-border-svg text[y="170"]');
   if (svgLoc) svgLoc.textContent = d.svgLocation;
+  _renderTourList();
+}
+
+function _renderTourList() {
+  var nav = document.getElementById('tour-list');
+  if (!nav) return;
+  var html = '<p class="tour-list-label">Treasure maps</p><div class="tour-list-row">';
+  Object.keys(DESTINATION_CONFIG).forEach(function(key) {
+    var dest = DESTINATION_CONFIG[key];
+    var active = dest.id === DEST.id ? ' is-active' : '';
+    html += '<a class="tour-chip' + active + '" href="?dest=' + encodeURIComponent(dest.id) + '">' + dest.shortTitle + '</a>';
+  });
+  html += '</div>';
+  nav.innerHTML = html;
 }
 
 function _onFirstTouch() {
@@ -364,8 +396,9 @@ function resetTour() {
 function initMap() {
   if (map) return;
 
-  const center = [39.632, -74.175];
-  map = L.map('map', { center: center, zoom: 12, zoomControl: true });
+  const center = DEST.mapCenter || [39.632, -74.175];
+  const zoom = DEST.mapZoom || 12;
+  map = L.map('map', { center: center, zoom: zoom, zoomControl: true });
   // Move zoom control to bottom-right (away from header)
   map.zoomControl.setPosition('bottomright');
 

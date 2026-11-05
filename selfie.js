@@ -146,7 +146,13 @@ window.showSelfieScreen = function (stopsVisited) {
   const countEl  = document.getElementById('selfie-stop-count');
   const svgBadge = document.getElementById('svg-stop-badge');
   if (countEl)  countEl.textContent  = stopsVisited + ' stops';
-  if (svgBadge) svgBadge.textContent = `I plundered ${stopsVisited} stops on LBI 🏴‍☠️`;
+  if (svgBadge) {
+    if (typeof DEST !== 'undefined' && DEST.svgBadge) {
+      svgBadge.textContent = DEST.svgBadge.replace(/\d+/, String(stopsVisited));
+    } else {
+      svgBadge.textContent = `I plundered ${stopsVisited} stops on LBI 🏴‍☠️`;
+    }
+  }
   _showSelfieStep('selfie-step-prompt');
   document.getElementById('selfie-screen').classList.remove('hidden');
 };
@@ -239,13 +245,14 @@ function _showPreview (dataURL) {
 window.sharePhoto = async function () {
   if (!capturedDataURL) return;
   const blob = await (await fetch(capturedDataURL)).blob();
-  const file = new File([blob], 'screecher-jones-lbi.jpg', { type: 'image/jpeg' });
+  const place = (typeof DEST !== 'undefined' && DEST.selfieLocation) ? DEST.selfieLocation : 'Long Beach Island';
+  const file = new File([blob], 'screecher-jones-tour.jpg', { type: 'image/jpeg' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({
         files: [file],
-        title: "Screecher Jones' LBI Treasure Tour",
-        text:  "I just plundered Long Beach Island with Screecher Jones 🏴‍☠️ Free GPS pirate tour — follow the treasure map!"
+        title: "Screecher Jones' Treasure Tour",
+        text:  "I just plundered " + place + " with Screecher Jones 🏴‍☠️ Free GPS pirate tour — follow the treasure map!"
       });
     } catch (err) {
       if (err.name !== 'AbortError') _fallbackDownload(capturedDataURL);
@@ -257,7 +264,8 @@ window.sharePhoto = async function () {
 
 function _fallbackDownload (dataURL) {
   const a = document.createElement('a');
-  a.href = dataURL; a.download = 'screecher-jones-lbi.jpg'; a.click();
+  const place = (typeof DEST !== 'undefined' && DEST.id) ? DEST.id : 'lbi';
+  a.href = dataURL; a.download = 'screecher-jones-' + place + '.jpg'; a.click();
 }
 
 window.retakePhoto = function () {
