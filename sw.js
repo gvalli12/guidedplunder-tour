@@ -1,11 +1,12 @@
 // Service Worker — LBI Pirate Tour PWA
-const CACHE_NAME = 'lbi-pirate-v25';
+const CACHE_NAME = 'lbi-pirate-v26';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './app.js',
   './tour-data.js',
+  './tour-data-hohokus.js',
   './deals-data.js',
   './manifest.json',
   './screecher-wings.png',
